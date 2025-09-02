@@ -201,3 +201,32 @@ $app->delete('/deactivateaccount-partner/{id}', function(Request $request, Respo
   return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
 });
 
+// GET /me-partner (protegido por Bearer)
+$app->get('/me-partner', function(Request $request, Response $response) {
+  $auth = $request->getHeaderLine('Authorization');
+  if (!preg_match('/Bearer\s+(.*)$/i', $auth, $m)) {
+    $response->getBody()->write(json_encode(['msg' => 'Token ausente']));
+    return $response->withHeader('Content-Type','application/json')->withStatus(401);
+  }
+
+  try {
+    $decoded = \Firebase\JWT\JWT::decode($m[1], new \Firebase\JWT\Key($this->get('secret'), $this->get('crypt-type')));
+  } catch (Exception $e) {
+    $response->getBody()->write(json_encode(['msg' => 'Token inválido']));
+    return $response->withHeader('Content-Type','application/json')->withStatus(401);
+  }
+
+  // Busca no cadastro_parceiro pelo ID do token
+  $stmt = $this->get('db')->prepare('SELECT codigo as id, nome, email, administrador FROM cadastro_parceiro WHERE codigo = :id LIMIT 1');
+  $stmt->bindParam('id', $decoded->id);
+  $stmt->execute();
+
+  if ($stmt->rowCount() === 0) {
+    $response->getBody()->write(json_encode(['msg' => 'Usuário não encontrado']));
+    return $response->withHeader('Content-Type','application/json')->withStatus(404);
+  }
+
+  $me = $stmt->fetch(\PDO::FETCH_ASSOC);
+  $response->getBody()->write(json_encode(['me' => $me]));
+  return $response->withHeader('Content-Type','application/json');
+});
