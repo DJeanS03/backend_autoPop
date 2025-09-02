@@ -11,3 +11,4 @@ require_once __DIR__."/motoboy/account-management.php";
 require_once __DIR__."/parceiro/account-management.php";
 require_once __DIR__."/produtos/produtos.php";
 require_once __DIR__."/produtos/catalogo.php";
+require_once __DIR__ . '/parceiro/moderacao.php';  
