@@ -9,77 +9,87 @@ use Ramsey\Uuid\Uuid;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
-require_once __DIR__."/../../helpers/validaCPF.php";
-require_once __DIR__."/../../helpers/saltGenerate.php";
-require_once __DIR__."/../../templates/emailCreateMotoboy.php";
-require_once __DIR__."/../../helpers/emailSend.php";
+require_once __DIR__ . "/../../helpers/validaCPF.php";
+require_once __DIR__ . "/../../templates/emailCreateMotoboy.php";
+require_once __DIR__ . "/../../helpers/emailSend.php";
+require_once __DIR__ . "/../../helpers/Password.php";
 
-$app->post('/precadastro-motoboy', function(Request $request, Response $response, $args){
+$app->post('/precadastro-motoboy', function (Request $request, Response $response, $args) {
   $input = $request->getParsedBody();
+  if (!is_array($input)) {
+    $raw = (string) $request->getBody();
+    $decoded = json_decode($raw, true);
+    $input = is_array($decoded) ? $decoded : [];
+  }
 
   //Verifica se os campos obrigatórios foram preenchidos
-  if(empty($input['nome']) || empty($input['cpf']) || empty($input['telefone'])
-  || empty($input['email']) || empty($input['cep']) || empty($input['veiculo'])
-  || empty($input['senha'])){
+  if (
+    empty($input['nome']) || empty($input['cpf']) || empty($input['telefone'])
+    || empty($input['email']) || empty($input['cep']) || empty($input['veiculo'])
+    || empty($input['senha'])
+  ) {
     $response->getBody()->write(json_encode(['msg' => 'Campo(s) obrigatório(s) não preenchido(s)']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
 
   //Verifica se o CPF digitado é válido
-  if(!validaCPF($input['cpf'])){
+  if (!validaCPF($input['cpf'])) {
     $response->getBody()->write(json_encode(['msg' => 'CPF inválido. Favor, tente novamente com um CPF válido']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
 
   //Verifica se o email fornecido é válido
-  if(!filter_var($input['email'], FILTER_VALIDATE_EMAIL)){
+  if (!filter_var($input['email'], FILTER_VALIDATE_EMAIL)) {
     $response->getBody()->write(json_encode(['msg' => 'Email inválido. Favor, tente novamente com um email válido']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
 
   $formattedCPF = preg_replace('/[^0-9]/', '', $input['cpf']);
+  $formattedTelefone = preg_replace('/\D/', '', (string) $input['telefone']);
 
-  try{
+  try {
     $verifyExistence = $this->get('db')->prepare("SELECT id FROM precadastro_motoboy WHERE cpf = :cpf OR email = :email");
     $verifyExistence->bindParam('cpf', $formattedCPF);
     $verifyExistence->bindParam('email', $input['email']);
     $verifyExistence->execute();
-  }
-  catch(PDOException $e){
+  } catch (PDOException $e) {
     $response
-    ->getBody()
-    ->write(
-      json_encode(
-        ['msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: '. $e->getMessage()
-      ])
-    );
+      ->getBody()
+      ->write(
+        json_encode(
+          [
+            'msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: ' . $e->getMessage()
+          ]
+        )
+      );
 
     return $response
-    ->withHeader('Content-Type', 'application/json')
-    ->withStatus(500);
+      ->withHeader('Content-Type', 'application/json')
+      ->withStatus(500);
   }
 
-  try{
+  try {
     $verifyExistence2 = $this->get('db')->prepare('SELECT id FROM cadastro_motoboy WHERE cpf = :cpf OR email = :email');
     $verifyExistence2->bindParam('cpf', $formattedCPF);
     $verifyExistence2->bindParam('email', $input['email']);
     $verifyExistence2->execute();
-  }
-  catch(PDOException $e){
+  } catch (PDOException $e) {
     $response
-    ->getBody()
-    ->write(
-      json_encode(
-        ['msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: '. $e->getMessage()
-      ])
-    );
+      ->getBody()
+      ->write(
+        json_encode(
+          [
+            'msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: ' . $e->getMessage()
+          ]
+        )
+      );
 
     return $response
-    ->withHeader('Content-Type', 'application/json')
-    ->withStatus(500);
+      ->withHeader('Content-Type', 'application/json')
+      ->withStatus(500);
   }
 
-  if($verifyExistence->rowCount() > 0 || $verifyExistence2->rowCount() > 0){
+  if ($verifyExistence->rowCount() > 0 || $verifyExistence2->rowCount() > 0) {
     $response->getBody()->write(json_encode(['msg' => 'Cadastro já encontrado. Tente recuperar sua senha ou entre em contato com o suporte']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
@@ -87,19 +97,18 @@ $app->post('/precadastro-motoboy', function(Request $request, Response $response
   //Gerando id
   $uuid = Uuid::uuid4();
 
-  //Gerando senha criptografada
-  $salt = generateRandomSalt();
-  $password = crypt($input['senha'], '$2a$'.$_ENV['COST'].'$'.$salt.'$');
+  //Gerando senha (bcrypt helper)
+  $password = hash_password($input['senha']);
 
-  $formattedCEP = preg_replacE('/[^0-9]/', '', $input['cep']);
+  $formattedCEP = preg_replace('/[^0-9]/', '', $input['cep']);
 
-  try{
+  try {
     $insertPreRegister = $this->get('db')->prepare('INSERT INTO precadastro_motoboy (id, nome, cpf, telefone, email, cep, estado, cidade, bairro, logradouro, numero_endereco, complemento, veiculo, placa, senha, como_fazer_entregas)
                                                   VALUES(:id, :nome, :cpf, :telefone, :email, :cep, :estado, :cidade, :bairro, :logradouro, :numero_endereco, :complemento, :veiculo, :placa, :senha, :entregas)');
     $insertPreRegister->bindParam('id', $uuid);
     $insertPreRegister->bindParam('nome', $input['nome']);
     $insertPreRegister->bindParam('cpf', $formattedCPF);
-    $insertPreRegister->bindParam('telefone', $input['telefone']);
+    $insertPreRegister->bindParam('telefone', $formattedTelefone);
     $insertPreRegister->bindParam('email', $input['email']);
     $insertPreRegister->bindParam('cep', $formattedCEP);
     $insertPreRegister->bindParam('estado', $input['estado']);
@@ -113,19 +122,20 @@ $app->post('/precadastro-motoboy', function(Request $request, Response $response
     $insertPreRegister->bindParam('senha', $password);
     $insertPreRegister->bindParam('entregas', $input['como_fazer_entregas']);
     $insertPreRegister->execute();
-  }
-  catch(PDOException $e){
+  } catch (PDOException $e) {
     $response
-    ->getBody()
-    ->write(
-      json_encode(
-        ['msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: '. $e->getMessage()
-      ])
-    );
+      ->getBody()
+      ->write(
+        json_encode(
+          [
+            'msg' => 'Erro no banco de dados. Entre em contato com o suporte com a seguinte descrição: ' . $e->getMessage()
+          ]
+        )
+      );
 
     return $response
-    ->withHeader('Content-Type', 'application/json')
-    ->withStatus(500);
+      ->withHeader('Content-Type', 'application/json')
+      ->withStatus(500);
   }
 
   $data_email = [
@@ -140,35 +150,57 @@ $app->post('/precadastro-motoboy', function(Request $request, Response $response
   return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
 });
 
-$app->post('/auth-motoboy', function(Request $request, Response $response, $args){
+$app->post('/auth-motoboy', function (Request $request, Response $response, $args) {
   $input = $request->getParsedBody();
+  if (!is_array($input)) {
+    $raw = (string) $request->getBody();
+    $decoded = json_decode($raw, true);
+    $input = is_array($decoded) ? $decoded : [];
+  }
 
-  if(empty($input['user']) || empty($input['password'])){
+  if (empty($input['user']) || empty($input['password'])) {
     $response->getBody()->write(json_encode(['msg' => 'Usuário ou senha não preenchido(s)']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
 
-  try{
-    $validaUsuario = $this->get('db')->prepare("SELECT id, email, telefone, senha FROM cadastro_motoboy WHERE (cpf = :user OR email = :user) AND email_confirmado <> 0");
-    $validaUsuario->bindParam('user', $input['user']);
-    $validaUsuario->execute();
+  $userParam = $input['user'];
+  $digits = preg_replace('/\D/', '', $userParam);
+  if (strlen($digits) === 11) {
+    $userParam = $digits;
   }
-  catch(PDOException $e){
-    $response
-    ->getBody()
-    ->write(
-      json_encode(
-        ['msg' => 'Erro no banco de dados. Entre em contato com o suporte com o seguinte erro: '.$e->getMessage()]
-      )
+
+  try {
+    $userCpfDigits = preg_replace('/\D/', '', (string) ($input['user'] ?? ''));
+
+    $validaUsuario = $this->get('db')->prepare(
+      "SELECT id, email, telefone, senha
+     FROM cadastro_motoboy
+    WHERE (cpf = :cpf OR email = :email)
+      AND email_confirmado <> 0
+    LIMIT 1"
     );
+    $validaUsuario->execute([
+      'cpf' => $userCpfDigits,
+      'email' => $input['user'],
+    ]);
+
+    $validaUsuario->execute();
+  } catch (PDOException $e) {
+    $response
+      ->getBody()
+      ->write(
+        json_encode(
+          ['msg' => 'Erro no banco de dados. Entre em contato com o suporte com o seguinte erro: ' . $e->getMessage()]
+        )
+      );
 
     return $response
-          ->withHeader('Content-Type', 'application/json')
-          ->withStatus(500);
+      ->withHeader('Content-Type', 'application/json')
+      ->withStatus(500);
   }
 
   //Verifica se trouxe algum dado. Se não, é porque usuário não existe
-  if($validaUsuario->rowCount() === 0){
+  if ($validaUsuario->rowCount() === 0) {
     $response->getBody()->write(json_encode(['msg' => 'Usuário e/ou senha incorreto(s)']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
@@ -176,10 +208,21 @@ $app->post('/auth-motoboy', function(Request $request, Response $response, $args
   //Verifica a senha
   $resValidaUsuario = $validaUsuario->fetchObject();
 
-  if(crypt($input['password'], $resValidaUsuario->senha) !== $resValidaUsuario->senha){
+  $check = verify_and_upgrade($input['password'], $resValidaUsuario->senha);
+  if (!$check['ok']) {
     $response->getBody()->write(json_encode(['msg' => 'Usuário e/ou senha incorreto(s)']));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
   }
+
+  // rehash transparente, se necessário
+  if (!empty($check['rehash'])) {
+    try {
+      $upd = $this->get('db')->prepare("UPDATE cadastro_motoboy SET senha = :hash WHERE id = :id");
+      $upd->execute(['hash' => $check['rehash'], 'id' => $resValidaUsuario->id]);
+    } catch (PDOException $e) { /* não bloqueia login */
+    }
+  }
+
 
   $payload = [
     'id' => $resValidaUsuario->id,
