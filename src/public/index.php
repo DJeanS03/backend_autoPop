@@ -1,6 +1,6 @@
 <?php
 
-require_once realpath(dirname(__FILE__)."/..")."/../vendor/autoload.php";
+require_once realpath(dirname(__FILE__) . "/..") . "/../vendor/autoload.php";
 
 use Slim\Factory\AppFactory;
 use Monolog\Logger;
@@ -8,17 +8,17 @@ use Monolog\Handler\RotatingFileHandler;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
 
-if(PHP_SAPI === 'cli-server'){
+if (PHP_SAPI === 'cli-server') {
   $url = parse_url($_SERVER['REQUEST_URI']);
-  $file = __DIR__.$url['path'];
-  
-  if(is_file($file)){
+  $file = __DIR__ . $url['path'];
+
+  if (is_file($file)) {
     return false;
   }
 }
 
 //Usando os containers definidos no script descrito
-require_once __DIR__."/../configs/dependencies.php";
+require_once __DIR__ . "/../configs/dependencies.php";
 AppFactory::setContainer($container);
 
 $app = AppFactory::create();
@@ -30,14 +30,8 @@ $app->addBodyParsingMiddleware();
 $logger = new Logger('error');
 $logger->pushHandler(new RotatingFileHandler('error.log'));
 
-$customErrorHandler = function(
-  ServerRequestInterface $request,
-  Throwable $exception,
-  bool $displayErrorDetails,
-  bool $logErrors,
-  bool $logErrorDetails
-) use($app, $logger){
-  if($logger){
+$customErrorHandler = function (ServerRequestInterface $request, Throwable $exception, bool $displayErrorDetails, bool $logErrors, bool $logErrorDetails) use ($app, $logger) {
+  if ($logger) {
     $logger->error($exception->getMessage());
   }
 
@@ -52,7 +46,7 @@ $customErrorHandler = function(
 $errorMiddleware = $app->addErrorMiddleware(true, true, true, $logger);
 $errorMiddleware->setDefaultErrorHandler($customErrorHandler);
 
-require_once __DIR__."/../configs/middleware.php";
-require_once __DIR__."/../routes/index.php";
+require_once __DIR__ . "/../configs/middleware.php";
+require_once __DIR__ . "/../routes/index.php";
 
 $app->run();

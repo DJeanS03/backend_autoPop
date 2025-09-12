@@ -25,13 +25,13 @@ function verifyRoute($routeSearch)
     '/create-client-account',
     '/listar-produtos',
     '/buscar-catalogo',
-    '/aprovar-partner', 
+    '/aprovar-partner',
     '/precadastros-partner/{id}',
     '/precadastros-partner',
     '/cadastros-partner',
     '/_debug-auth-partner',
     '/cadastros-partner/by-email',
-    '/_reset-pass-partner'
+    '/_reset-pass-partner',
   ];
 
   foreach ($allowed_routes as $route) {

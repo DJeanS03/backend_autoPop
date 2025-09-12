@@ -13,6 +13,7 @@ require_once __DIR__ . "/../../helpers/saltGenerate.php";
 require_once __DIR__ . "/../../helpers/validaCNPJ.php";
 require_once __DIR__ . "/../../templates/emailCreatePartner.php";
 require_once __DIR__ . "/../../helpers/emailSend.php";
+require_once __DIR__ . "/../../helpers/Password.php";
 
 /**
  * -----------------------------
@@ -23,8 +24,11 @@ require_once __DIR__ . "/../../helpers/emailSend.php";
 $app->post('/precadastro-partner', function (Request $request, Response $response) {
   $input = $request->getParsedBody();
   if (!is_array($input)) {
-    $input = [];
+    $raw = (string) $request->getBody();
+    $decoded = json_decode($raw, true);
+    $input = is_array($decoded) ? $decoded : [];
   }
+
 
   // Campos obrigatórios (todos os usados no INSERT)
   $required = [
@@ -193,7 +197,9 @@ $app->post('/precadastro-partner', function (Request $request, Response $respons
 $app->post('/auth-partner', function (Request $request, Response $response) {
   $input = $request->getParsedBody();
   if (!is_array($input)) {
-    $input = [];
+    $raw = (string) $request->getBody();
+    $decoded = json_decode($raw, true);
+    $input = is_array($decoded) ? $decoded : [];
   }
 
   if (empty($input['user']) || empty($input['password'])) {
@@ -236,10 +242,24 @@ $app->post('/auth-partner', function (Request $request, Response $response) {
 
   $user = $q->fetchObject();
 
-  // verifica senha (crypt com salt contido no próprio hash)
-  if (crypt($input['password'], $user->senha) !== $user->senha) {
+  // verifica senha com helper (bcrypt preferencial; fallback legado; rehash se preciso)
+  $check = verify_and_upgrade($input['password'], $user->senha);
+  if (!$check['ok']) {
     $response->getBody()->write(json_encode(['msg' => 'Usuário e/ou senha incorreto(s)'], JSON_UNESCAPED_UNICODE));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+  }
+
+  // se o helper indicar rehash, atualiza a coluna 'senha' para bcrypt
+  if (!empty($check['rehash'])) {
+    try {
+      $updHash = $this->get('db')->prepare("UPDATE cadastro_parceiro SET senha = :hash WHERE codigo = :codigo");
+      $updHash->execute([
+        'hash' => $check['rehash'],
+        'codigo' => $user->codigo
+      ]);
+    } catch (PDOException $e) {
+      // se falhar o rehash, não bloqueia o login; apenas segue
+    }
   }
 
   // atualiza último acesso
@@ -282,12 +302,17 @@ $app->post('/aprovar-partner', function (\Psr\Http\Message\ServerRequestInterfac
 
   $input = $request->getParsedBody();
   if (!is_array($input)) {
-    $input = [];
+    // Fallback manual de JSON
+    $raw = (string) $request->getBody();
+    $decoded = json_decode($raw, true);
+    $input = is_array($decoded) ? $decoded : [];
   }
+
   if (empty($input['email']) && empty($input['id'])) {
     $response->getBody()->write(json_encode(['msg' => 'Informe "email" ou "id" do pré-cadastro'], JSON_UNESCAPED_UNICODE));
     return $response->withHeader('Content-Type', 'application/json')->withStatus(422);
   }
+
 
   $db = $this->get('db');
 
