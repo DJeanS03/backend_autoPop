@@ -23,12 +23,26 @@ require_once __DIR__ . "/../../helpers/Password.php";
  */
 $app->post('/precadastro-partner', function (Request $request, Response $response) {
   $input = $request->getParsedBody();
+
+  $qp = $request->getQueryParams();
+  if (!empty($qp['debug'])) {
+    $rawDbg = isset($raw) ? $raw : (string) $request->getBody(); // caso não exista $raw
+    $out = [
+      'content_type' => $request->getHeaderLine('Content-Type'),
+      'headers' => array_map(fn($v) => implode(', ', $v), $request->getHeaders()),
+      'raw' => $rawDbg,
+      'parsed' => $input,
+      'json_error' => json_last_error_msg(),
+    ];
+    $response->getBody()->write(json_encode($out, JSON_UNESCAPED_UNICODE));
+    return $response->withHeader('Content-Type', 'application/json');
+  }
+
   if (!is_array($input)) {
     $raw = (string) $request->getBody();
     $decoded = json_decode($raw, true);
     $input = is_array($decoded) ? $decoded : [];
   }
-
 
   // Campos obrigatórios (todos os usados no INSERT)
   $required = [
@@ -135,9 +149,7 @@ $app->post('/precadastro-partner', function (Request $request, Response $respons
 
   // id + senha
   $uuid = Uuid::uuid4();
-  $salt = generateRandomSalt();
-  $cost = (int) ($_ENV['COST'] ?? 10);
-  $password = crypt($input['senha'], '$2a$' . $cost . '$' . $salt . '$');
+  $password = hash_password($input['senha']); // bcrypt via helper
 
   // insert em precadastro_parceiro (mantendo seu fluxo)
   try {
